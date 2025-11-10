@@ -1,5 +1,7 @@
 # 🧬 Algoritmo Genético — Função F6
 
+[🇬🇧 **Read in English**](./README_EN.md)
+
 ## 📘 Descrição
 Este projeto implementa um **Algoritmo Genético (AG)** aplicado à **função F6**, com o objetivo de encontrar os valores de **X** e **Y** que maximizam sua aptidão.  
 A aplicação foi desenvolvida em **Python** e utiliza **Streamlit** para fornecer uma interface visual interativa e intuitiva.
