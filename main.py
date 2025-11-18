@@ -55,8 +55,8 @@ def roleta(populacao, aptidoes):
         return random.choice(populacao)
     else:
         aleatorio = random.uniform(0, soma_aptidoes)
-        acumulado = 0.0
-
+        acumulado = 
+        
         for i, apt in enumerate(escala_aptidao):
             acumulado += apt
             if acumulado >= aleatorio:
