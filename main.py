@@ -61,7 +61,7 @@ def roleta(populacao, aptidoes):
             acumulado += apt
             if acumulado >= aleatorio:
                 return populacao[i]
-    return populacao[-1]
+    return random.choice(populacao)
 
 def crossover (pai1, pai2, taxa_crossover):
     posicao = random.choice(range(1, int(VAR_REPRESENTACAO - 1)))
