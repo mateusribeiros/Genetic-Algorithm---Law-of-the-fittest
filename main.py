@@ -308,7 +308,7 @@ elif st.session_state.page == "analysis":
     - **Top5 Globais**: tabela comparativa.
     """)
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📉 Evolução", "📊 Distribuição", "🧭 Dispersão X×Y", "📋 Top5 & Estatística"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📉 Evolução", "📊 Distribuição", "🧭 Dispersão X×Y", "📋 Top8 & Estatísticas"])
 
     with tab1:
         fig, ax = plt.subplots()
