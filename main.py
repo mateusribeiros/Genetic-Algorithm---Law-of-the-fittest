@@ -1,197 +1,182 @@
-import random
-import math
-import pandas as pd
+import math, random, pandas as pd
 import matplotlib.pyplot as plt
 import plotly.express as px
 import streamlit as st
 
-# ---------------------------
-# Parâmetros gerais
-# ---------------------------
-CHROMOSOME_LEN = 44
-BITS_PER_VAR = CHROMOSOME_LEN // 2
-MAX_INIT_ATTEMPTS = 10000  # limite para gerar população sem duplicatas
-
-# ------------------------------------------
-# Função F6(x, y)
-# ------------------------------------------
-def f6(x, y):
-    numerador = (math.sin(math.sqrt(x**2 + y**2)))**2 - 0.5
-    denominador = (1.0 + 0.001*(x**2 + y**2))**2
-    return 0.5 - (numerador / denominador)
-
-# ------------------------------------------
-# Evitar arredondamento em exibição da aptidão
-# ------------------------------------------
-def truncar_6(x):
-    return math.floor(x * 10**8) / 10**8
-
-# ------------------------------------------
-# Conversão binária - real
-# ------------------------------------------
-def bin_to_real(binary):
-    mid = len(binary)//2
-    x_bits, y_bits = binary[:mid], binary[mid:]
-    x_dec = int(x_bits, 2)
-    y_dec = int(y_bits, 2)
-    x = -100 + (200 * x_dec / (2**BITS_PER_VAR - 1))
-    y = -100 + (200 * y_dec / (2**BITS_PER_VAR - 1))
-    return x, y
-
-# ------------------------------------------
-# Inicialização, avaliação, seleção, crossover e mutação
-# ------------------------------------------
-def init_population(size):
-    """Gera população garantindo (na medida do possível) cromossomos únicos."""
-    pop = set()
-    attempts = 0
-    while len(pop) < size and attempts < MAX_INIT_ATTEMPTS:
-        chrom = ''.join(random.choice('01') for _ in range(CHROMOSOME_LEN))
-        if chrom not in pop:
-            pop.add(chrom)
-        attempts += 1
-    while len(pop) < size:
-        chrom = ''.join(random.choice('01') for _ in range(CHROMOSOME_LEN))
-        pop.add(chrom)
-    return list(pop)
-
-def evaluate_population(population):
-    return [f6(*bin_to_real(ind)) for ind in population]
-
-def roulette_selection(population, fitness):
-    # Escala as aptidões para aumentar contraste
-    min_fit = min(fitness)
-    scaled_fitness = [(f - min_fit + 1e-6)**2 for f in fitness] 
-    total_fit = sum(scaled_fitness)
-
-    if total_fit == 0:
-        return random.choice(population)
-
-    rand = random.uniform(0, total_fit)
-    acum = 0.0
-    for i, fit in enumerate(scaled_fitness):
-        acum += fit
-        if acum >= rand:
-            return population[i]
-    return population[-1]
+# Variáveis globais
+VAR_REPRESENTACAO = 44
 
 
-def crossover(p1, p2, rate):
-    if random.random() < rate:
-        point = random.randint(1, len(p1)-1)
-        c1 = p1[:point] + p2[point:]
-        c2 = p2[:point] + p1[point:]
-        return c1, c2, True
-    return p1, p2, False
+#---------------------------------------------------------------------------------------------------------------------------------
+# FUNÇÕES ALEATÓRIAS E DE APTIDÃO
+def aleatorizar_pop(populacao):
+    pop_inicial = set()
+    for _ in range(populacao):
+        individuo = ''.join(random.choice('01') for _ in range(VAR_REPRESENTACAO))
+        pop_inicial.add(individuo)
+    return list(pop_inicial)
 
-def mutate(individual, rate):
-    out = []
-    for b in individual:
-        if random.random() < rate:
-            out.append('0' if b == '1' else '1')
+def obter_aptidao(populacao):
+    aptidao = []
+    for individuo in populacao:
+        x, y = converter_bin_dec(individuo)
+        apt = gerar_f6(x, y)
+        aptidao.append(apt)
+    return aptidao
+
+#---------------------------------------------------------------------------------------------------------------------------------
+# FUNÇÕES MATEMÁTICAS E DE TRANSFORMAÇÃO
+def gerar_f6(x, y):
+    numerador = math.sin(math.sqrt(x**2 + y**2))**2 - 0.5
+    denominador = (1.0 + 0.001 * (x**2 + y**2))**2
+    resultado = 0.5 - (numerador / denominador)
+    return round(resultado, 7)
+
+def converter_bin_dec(individuo):
+    separacao = len(individuo) // 2
+    var_x, var_y = individuo[:separacao], individuo[separacao:]
+    x, y = int(var_x, 2), int(var_y, 2)
+    bits = len(var_x)
+    x_normalizado = -100 + (200 * x / (2**bits - 1)) 
+    y_normalizado = -100 + (200 * y / (2**bits - 1))
+    return x_normalizado, y_normalizado
+
+#---------------------------------------------------------------------------------------------------------------------------------
+# FUNÇÕES DE ROLETA, CROSSOVER E MUTAÇÃO
+def roleta(populacao, aptidoes):
+    menor_aptidao = min(aptidoes)
+
+    # Essa escala de 1e-6 ajuda para diferenças pequenas entre as aptidões, identificando com mais precisão a fatia de cada
+    escala_aptidao = [(apt - menor_aptidao + 1e-6)**2 for apt in aptidoes]
+    soma_aptidoes = sum(escala_aptidao)
+
+    if soma_aptidoes == 0:
+        return random.choice(populacao)
+    else:
+        aleatorio = random.uniform(0, soma_aptidoes)
+        acumulado = 0.0
+
+        for i, apt in enumerate(escala_aptidao):
+            acumulado += apt
+            if acumulado >= aleatorio:
+                return populacao[i]
+    return populacao[-1]
+
+def crossover (pai1, pai2, taxa_crossover):
+    posicao = random.choice(range(1, int(VAR_REPRESENTACAO - 1)))
+
+    p1_cabeca, p1_cauda = pai1[:posicao], pai1[posicao:]
+    p2_cabeca, p2_cauda = pai2[:posicao], pai2[posicao:]
+
+    if random.random() < taxa_crossover:
+        cross1 = p1_cabeca + p2_cauda
+        cross2 = p2_cabeca + p1_cauda
+        return cross1, cross2
+    
+    return pai1, pai2
+
+def mutacao(individuo, taxa_mutacao):
+    novo_individuo = ''
+
+    for cromossomo in individuo:
+        if random.random() < taxa_mutacao:
+            novo_cromossomo = '1' if cromossomo == '0' else '0'
+            novo_individuo += novo_cromossomo
         else:
-            out.append(b)
-    return ''.join(out)
+            novo_individuo += cromossomo
 
-# ------------------------------------------
-# Algoritmo Genético (com registro determinístico de pais)
-# ------------------------------------------
-def genetic_algorithm(pop_size, generations, crossover_rate, mutation_rate):
-    random.seed()  # garante diversidade entre execuções
-    population = init_population(pop_size)
-    data = []  # id, geracao, cromossomo, x, y, aptidao, pai1, pai2
-    id_counter = 1
+    return novo_individuo
 
-    best_ind = None
-    best_fit = -float('inf')
-    best_parents = (None, None)
-    best_gen = None
+#---------------------------------------------------------------------------------------------------------------------------------
+# PRINCIPAL
+def algoritmo_genetico(pop_tamanho,num_ger,taxa_crossover,taxa_mutacao):
+    random.seed()
+    # gerar populacao inicial
+    populacao = aleatorizar_pop(pop_tamanho)
+    dados = [] # Para gerar um arquivo csv
 
-    best_per_gen = []
-    avg_per_gen = []
+    melhor_individuo = None
+    melhor_aptidao = float('inf')
+    melhores_pais = (None, None)
+    melhor_ger = None
 
-    for gen in range(1, generations+1):
-        fitness = evaluate_population(population)
-        avg_per_gen.append(sum(fitness)/len(fitness))
-        gen_best_fit = max(fitness)
-        best_per_gen.append(gen_best_fit)
+    melhor_ind_por_ger = []
+    media_por_ger = []
 
-        # Registra população atual (pais) — sem pais conhecidos
-        for ind, fit in zip(population, fitness):
-            x, y = bin_to_real(ind)
-            fit_trunc = truncar_6(fit)
-            data.append([id_counter, gen, ind, x, y, fit_trunc, None, None])
-            id_counter += 1
+    for geracao in range(1,num_ger):
+        aptidoes = obter_aptidao(populacao)
 
-        # Atualiza melhor global
-        if gen_best_fit > best_fit:
-            best_fit = gen_best_fit
-            best_ind = population[fitness.index(gen_best_fit)]
-            best_gen = gen
+        melhor_apt_local = max(aptidoes)
+        melhor_ind_local = populacao[aptidoes.index(melhor_apt_local)]
+        x, y = converter_bin_dec(melhor_ind_local)
 
-        # Geração de filhos
-        new_pop = []
-        elite = population[fitness.index(gen_best_fit)]
+        melhor_ind_por_ger.append([melhor_ind_local, x, y, melhor_apt_local, geracao])
+        media_por_ger.append(sum(aptidoes) / len(aptidoes))
 
-        while len(new_pop) < pop_size:
-            p1 = roulette_selection(population, fitness)
-            p2 = roulette_selection(population, fitness)
-            c1, c2, crossed = crossover(p1, p2, crossover_rate)
-            c1 = mutate(c1, mutation_rate)
-            c2 = mutate(c2, mutation_rate)
+        nova_populacao = []
 
-            # Avaliar filhos e registrar
-            x1, y1 = bin_to_real(c1)
-            fit_c1 = f6(x1, y1)
-            fit_trunc = truncar_6(fit_c1)
-            data.append([id_counter, gen+1, c1, x1, y1, fit_trunc, p1, p2])
-            id_counter += 1
+        if geracao == 1:
+            # Armazenar dados do indivíduo
+            for individuo, aptidao in zip(populacao, aptidoes):
+                x, y = converter_bin_dec(individuo)
+                dados.append([geracao, individuo, x, y, aptidao, None, None, None])
 
-            x2, y2 = bin_to_real(c2)
-            fit_c2 = f6(x2, y2)
-            fit_trunc = truncar_6(fit_c2)
-            data.append([id_counter, gen+1, c2, x2, y2, fit_trunc, p1, p2])
-            id_counter += 1
+            # Atualizar melhor indivíduo global
+            if melhor_apt_local < melhor_aptidao:
+                melhor_aptidao = melhor_apt_local
+                melhor_individuo = populacao[aptidoes.index(melhor_apt_local)]
+                melhor_ger = geracao
 
-            if fit_c1 > best_fit:
-                best_fit = fit_c1
-                best_ind = c1
-                best_parents = (p1, p2)
-                best_gen = gen+1
-            if fit_c2 > best_fit:
-                best_fit = fit_c2
-                best_ind = c2
-                best_parents = (p1, p2)
-                best_gen = gen+1
+        while len(nova_populacao) < pop_tamanho:
+            pai1 = roleta(populacao, aptidoes)
+            pai2 = roleta(populacao, aptidoes)
+            
+            cross1, cross2 = crossover(pai1, pai2, taxa_crossover)
 
-            new_pop.extend([c1, c2])
+            mut_filho1 = mutacao(cross1, taxa_mutacao)
+            mut_filho2 = mutacao(cross2, taxa_mutacao)
 
-        # elitismo
-        new_pop[0] = elite
-        population = new_pop[:pop_size]
+            x1, y1 = converter_bin_dec(mut_filho1)
+            x2, y2 = converter_bin_dec(mut_filho2)
 
-    # Cria DataFrame e salva CSV
-    df = pd.DataFrame(data, columns=["id","geracao","cromossomo","x","y","aptidao","pai1","pai2"])
+            apt_filho1 = gerar_f6(x1, y1)
+            apt_filho2 = gerar_f6(x2, y2)
+
+            dados.append([geracao+1, mut_filho1, x1, y1, apt_filho1, pai1, pai2, geracao])
+            dados.append([geracao+1, mut_filho2, x2, y2, apt_filho2, pai1, pai2, geracao])
+
+            # if apt_filho1 > melhor_aptidao:
+            #     melhor_aptidao = apt_filho1
+            #     melhor_individuo = mut_filho1
+            #     melhor_ger = geracao+1
+            # if apt_filho2 > melhor_aptidao:
+            #     melhor_aptidao = apt_filho2
+            #     melhor_individuo = mut_filho2
+            #     melhor_ger = geracao+1
+
+            nova_populacao.extend([mut_filho1, mut_filho2])
+
+        nova_populacao[0] = melhor_individuo
+        populacao = nova_populacao[:pop_tamanho]
+    
+    df = pd.DataFrame(dados, columns=["geracao","cromossomo","x","y","aptidao","pai1","pai2","geracao_pais"])
     df.to_csv("resultados_ag.csv", index=False)
 
-    # Top 5 globais (sem duplicatas)
     df_unique = df.sort_values(by="aptidao", ascending=False).drop_duplicates(subset="cromossomo", keep="first")
-    top_df = df_unique.head(5)
-    top5 = [(row["cromossomo"], row["x"], row["y"], row["aptidao"], int(row["geracao"])) for _, row in top_df.iterrows()]
+    top_df = df_unique.head(8)
+    top8 = [(row["cromossomo"], row["x"], row["y"], row["aptidao"], int(row["geracao"])) for _, row in top_df.iterrows()]
 
-    # Melhor global e pais
-    best_row = df.loc[df["aptidao"].idxmax()]
-    best_ind = best_row["cromossomo"]
-    x_best, y_best = best_row["x"], best_row["y"]
-    best_fit = best_row["aptidao"]
-    best_gen = int(best_row["geracao"])
-    best_parents = (best_row["pai1"], best_row["pai2"])
+    melhor_linha = df.loc[df["aptidao"].idxmax()]
+    melhor_individuo = melhor_linha["cromossomo"]
+    x_melhor, y_melhor = melhor_linha["x"], melhor_linha["y"]
+    melhor_aptidao = melhor_linha["aptidao"]
+    melhor_ger = int(melhor_linha["geracao"])
+    melhores_pais = (melhor_linha["pai1"], melhor_linha["pai2"])
+    geracao_pais = int(melhor_linha["geracao_pais"])
 
-    return best_ind, x_best, y_best, best_fit, top5, best_parents, best_gen, df, best_per_gen, avg_per_gen
+    return melhor_individuo, x_melhor, y_melhor, melhor_aptidao, melhor_ger, melhores_pais, df, geracao_pais, top8, melhor_ind_por_ger, media_por_ger
 
-# ------------------------------------------
-# Interface Streamlit
-# ------------------------------------------
+# Interface
 st.set_page_config(page_title="Algoritmo Genético F6", layout="wide")
 
 if "page" not in st.session_state:
@@ -202,94 +187,117 @@ if st.session_state.page == "setup":
     st.title("🧬 Algoritmo Genético — Função F6")
     st.markdown("Configure os parâmetros do algoritmo genético abaixo:")
 
-    pop_size = st.number_input("Tamanho da população (10 - 500)", min_value=10, max_value=500, value=100)
-    generations = st.number_input("Número de gerações (1 - 5000)", min_value=1, max_value=5000, value=50)
+    tamanho_populacao = st.number_input("Tamanho da população", min_value=10, max_value=10000, value=100)
+    geracoes = st.number_input("Número de gerações", min_value=1, max_value=10000, value=50)
 
-    crossover_rate = st.number_input(
+    taxa_crossover = st.number_input(
         "Taxa de Crossover (0.0 - 1.0)", min_value=0.0, max_value=1.0, value=0.65, format="%.2f", step=0.01
     )
-    mutation_rate = st.number_input(
+    taxa_mutacao = st.number_input(
         "Taxa de Mutação (0.0 - 1.0)", min_value=0.0, max_value=1.0, value=0.008, format="%.3f", step=0.001
     )
 
     if st.button("🚀 Executar Algoritmo"):
         with st.spinner("Executando AG — isso pode levar alguns segundos/minutos..."):
-            best, x, y, fit, top5, parents, best_gen, df, best_per_gen, avg_per_gen = genetic_algorithm(
-                pop_size, generations, crossover_rate, mutation_rate
+            melhor_individuo, x_melhor, y_melhor, melhor_aptidao, melhor_ger, melhores_pais, df, geracao_pais, top8, melhor_ind_por_ger, media_por_ger = algoritmo_genetico(
+                tamanho_populacao, geracoes, taxa_crossover, taxa_mutacao
             )
         st.session_state.update({
-            "best_tuple": (best, x, y, fit),
-            "top5": top5,
-            "parents": parents,
-            "best_gen": best_gen,
+            "melhor_tupla": (melhor_individuo, x_melhor, y_melhor, melhor_aptidao, melhor_ger),
+            "top8": top8,
+            "pais": melhores_pais,
+            "melhor_ger": melhor_ger,
+            "geracao_pais": geracao_pais,
             "df": df,
-            "best_per_gen": best_per_gen,
-            "avg_per_gen": avg_per_gen,
+            "melhor_ind_por_ger": melhor_ind_por_ger,
+            "media_por_ger": media_por_ger,
             "page": "results"
         })
         st.rerun()
 
 # ---------- Página Results ----------
 elif st.session_state.page == "results":
-    if "best_tuple" not in st.session_state:
+    if "melhor_tupla" not in st.session_state:
         st.warning("Nenhum resultado disponível. Execute uma simulação primeiro.")
         if st.button("Voltar para configuração"):
             st.session_state.page = "setup"
             st.rerun()
     else:
-        best, x, y, fit = st.session_state.best_tuple
-        top5 = st.session_state.top5
-        parents = st.session_state.parents
-        best_gen = st.session_state.best_gen
+        melhor_individuo, x_melhor, y_melhor, melhor_aptidao, melhor_ger = st.session_state.melhor_tupla
+        top8 = st.session_state.top8
+        pais = st.session_state.pais
+        melhor_ger = st.session_state.melhor_ger
+        geracao_pais = st.session_state.geracao_pais
+        melhor_ind_por_ger = st.session_state.melhor_ind_por_ger
 
         st.title("🏆 Resultado do Algoritmo Genético")
         st.subheader("Melhor Indivíduo (Global)")
-        st.code(f"Cromossomo: {best}", language="text")
-        st.write(f"**X:** {truncar_6(x):.6f}   **Y:** {truncar_6(y):.6f}   **Aptidão:** {truncar_6(fit):.10f}   **Geração:** {best_gen}")
+        st.code(f"Cromossomo: {melhor_individuo}", language="text")
+        st.write(f"**X:** {(x_melhor):.6f}   **Y:** {(y_melhor):.6f}   **Aptidão:** {(melhor_aptidao):.10f}   **Geração:** {melhor_ger}")
 
-        if parents and (parents != (None, None)):
-            p1, p2 = parents
+        if pais and (pais != (None, None)):
+            p1, p2 = pais
             st.subheader("Pais do Melhor Indivíduo")
             if p1:
-                x1, y1 = bin_to_real(p1)
-                st.markdown(f"**Pai 1** — X={truncar_6(x1):.6f}, Y={truncar_6(y1):.6f}, Aptidão={truncar_6(f6(x1,y1)):.10f}, Geração={best_gen}")
+                x1, y1 = converter_bin_dec(p1)
+                st.markdown(f"**Pai 1** — X={(x1):.6f}, Y={(y1):.6f}, Aptidão={(gerar_f6(x1,y1)):.10f}, Geração={geracao_pais}")
                 st.code(p1, language="text")
             if p2:
-                x2, y2 = bin_to_real(p2)
-                st.markdown(f"**Pai 2** — X={truncar_6(x2):.6f}, Y={truncar_6(y2):.6f}, Aptidão={truncar_6(f6(x2,y2)):.10f}, Geração={best_gen}")
+                x2, y2 = converter_bin_dec(p2)
+                st.markdown(f"**Pai 2** — X={(x2):.6f}, Y={(y2):.6f}, Aptidão={(gerar_f6(x2,y2)):.10f}, Geração={geracao_pais}")
                 st.code(p2, language="text")
         else:
             st.info("Pais não identificados (indivíduo inicial).")
 
-        st.subheader("Top 5 Globais (todas as gerações)")
-        df_top5 = pd.DataFrame(top5, columns=["Cromossomo", "X", "Y", "Aptidao", "Geração"])
-        df_top5["Aptidao"] = df_top5["Aptidao"].apply(truncar_6)
-        df_top5["X"] = df_top5["X"].apply(truncar_6)
-        df_top5["Y"] = df_top5["Y"].apply(truncar_6)
+        st.subheader("Top 8 Globais (todas as gerações)")
+        df_top8 = pd.DataFrame(top8, columns=["Cromossomo", "X", "Y", "Aptidao", "Geração"])
+        df_top8["Aptidao"] = df_top8["Aptidao"]
+        df_top8["Cromossomo"] = df_top8["Cromossomo"]
+        df_top8["X"] = df_top8["X"]
+        df_top8["Y"] = df_top8["Y"]
         st.dataframe(
-            df_top5.style.format({
-                "X": lambda v: f"{truncar_6(v):.4f}",
-                "Y": lambda v: f"{truncar_6(v):.4f}",
-                "Aptidao": lambda v: f"{truncar_6(v):.10f}"
+            df_top8.style.format({
+                "Cromossomo": lambda v: f"{v}",
+                "X": lambda v: f"{(v):.6f}",
+                "Y": lambda v: f"{(v):.6f}",
+                "Aptidao": lambda v: f"{(v):.10f}",
+                "Geração": lambda v: f"{v}",
             }),
             width="stretch"
         )
-        
 
-        col1, col2 = st.columns(2)
-        if col1.button("📊 Prosseguir para análise"):
-            st.session_state.page = "analysis"
-            st.rerun()
-        if col2.button("🔁 Nova simulação"):
+        st.subheader("Melhores Indivíduos por Geração")
+        df_gen = pd.DataFrame(melhor_ind_por_ger, columns=["Cromossomo", "X", "Y", "Aptidao", "Geração"])
+        df_gen["Aptidao"] = df_gen["Aptidao"]
+        df_gen["Cromossomo"] = df_gen["Cromossomo"]
+        df_gen["Geração"] = df_gen["Geração"]
+        df_gen["X"] = df_gen["X"]
+        df_gen["Y"] = df_gen["Y"]
+        st.dataframe(
+            df_gen.style.format({
+                "Cromossomo": lambda v: f"{v}",
+                "X": lambda v: f"{(v):.4f}",
+                "Y": lambda v: f"{(v):.4f}",
+                "Aptidao": lambda v: f"{(v):.10f}",
+                "Geração": lambda v: f"{v}",
+            }),
+            width="stretch"
+        )
+
+        col1, col2= st.columns(2)
+        if col1.button("🔁 Nova simulação"):
             st.session_state.page = "setup"
+            st.rerun()
+        if col2.button("📊 Prosseguir para análise"):
+            st.session_state.page = "analysis"
             st.rerun()
 
 # ---------- Página Analysis ----------
 elif st.session_state.page == "analysis":
     df = st.session_state.df
-    best_per_gen = st.session_state.best_per_gen
-    avg_per_gen = st.session_state.avg_per_gen
-    top5 = st.session_state.top5
+    media_por_ger = st.session_state.media_por_ger
+    top8 = st.session_state.top8
+    melhor_ind_por_ger = st.session_state.melhor_ind_por_ger
 
     st.title("📈 Análises e Gráficos da População")
     st.markdown("""
@@ -304,8 +312,9 @@ elif st.session_state.page == "analysis":
 
     with tab1:
         fig, ax = plt.subplots()
-        ax.plot(best_per_gen, label="Melhor por geração")
-        ax.plot(avg_per_gen, label="Média por geração")
+        aptidoes_por_ger = [ind[3] for ind in melhor_ind_por_ger]
+        ax.plot(aptidoes_por_ger, label="Melhor por geração")
+        ax.plot(media_por_ger, label="Média por geração")
         ax.set_title("Evolução da Aptidão")
         ax.set_xlabel("Geração")
         ax.set_ylabel("Aptidão")
@@ -321,16 +330,19 @@ elif st.session_state.page == "analysis":
         st.plotly_chart(fig, width="stretch")
 
     with tab4:
-        st.subheader("Top 5 Globais (todas as gerações)")
-        df_top5 = pd.DataFrame(top5, columns=["Cromossomo", "X", "Y", "Aptidao", "Geração"])
-        df_top5["Aptidao"] = df_top5["Aptidao"].apply(truncar_6)
-        df_top5["X"] = df_top5["X"].apply(truncar_6)
-        df_top5["Y"] = df_top5["Y"].apply(truncar_6)
+        st.subheader("Top 8 Globais (todas as gerações)")
+        df_top8 = pd.DataFrame(top8, columns=["Cromossomo", "X", "Y", "Aptidao", "Geração"])
+        df_top8["Aptidao"] = df_top8["Aptidao"]
+        df_top8["Cromossomo"] = df_top8["Cromossomo"]
+        df_top8["X"] = df_top8["X"]
+        df_top8["Y"] = df_top8["Y"]
         st.dataframe(
-            df_top5.style.format({
-                "X": lambda v: f"{truncar_6(v):.6f}",
-                "Y": lambda v: f"{truncar_6(v):.6f}",
-                "Aptidao": lambda v: f"{truncar_6(v):.10f}"
+            df_top8.style.format({
+                "Cromossomo": lambda v: f"{v}",
+                "X": lambda v: f"{(v):.6f}",
+                "Y": lambda v: f"{(v):.6f}",
+                "Aptidao": lambda v: f"{(v):.10f}",
+                "Geração": lambda v: f"{v}",
             }),
             width="stretch"
         )
@@ -340,6 +352,28 @@ elif st.session_state.page == "analysis":
         high = df[df["aptidao"] > df["aptidao"].mean() + df["aptidao"].std()]
         st.markdown(f"🔹 Indivíduos acima da média + 1 desvio padrão: **{len(high)}**")
 
-    if st.button("🔁 Nova simulação"):
+        st.subheader("Melhores Indivíduos por Geração")
+        df_gen = pd.DataFrame(melhor_ind_por_ger, columns=["Cromossomo", "X", "Y", "Aptidao", "Geração"])
+        df_gen["Aptidao"] = df_gen["Aptidao"]
+        df_gen["Cromossomo"] = df_gen["Cromossomo"]
+        df_gen["Geração"] = df_gen["Geração"]
+        df_gen["X"] = df_gen["X"]
+        df_gen["Y"] = df_gen["Y"]
+        st.dataframe(
+            df_gen.style.format({
+                "Cromossomo": lambda v: f"{v}",
+                "X": lambda v: f"{(v):.4f}",
+                "Y": lambda v: f"{(v):.4f}",
+                "Aptidao": lambda v: f"{(v):.10f}",
+                "Geração": lambda v: f"{v}",
+            }),
+            width="stretch"
+        )
+
+    col1, col2 = st.columns(2)
+    if col1.button("🔁 Nova simulação"):
         st.session_state.page = "setup"
+        st.rerun()
+    if col2.button("⬅️ Voltar"):
+        st.session_state.page = "results"
         st.rerun()
